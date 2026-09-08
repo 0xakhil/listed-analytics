@@ -2,80 +2,86 @@
 
 import { ADDRESSES, EXPLORER, PROTOCOL_FEE_BPS, VENUES } from "@/lib/constants";
 import { fmtNum, fmtUsd, pct, shortAddr } from "@/lib/format";
-import type { AnalyticsPayload } from "@/lib/types";
+import type { AnalyticsPayload, RangeKey } from "@/lib/types";
 import { useEffect, useState } from "react";
 import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 const COLORS = ["#f5a524", "#37e39a", "#8b7bff", "#6ec8ff", "#ff5d5d"];
+const RANGES: { key: RangeKey; label: string }[] = [
+  { key: "1h", label: "1H" },
+  { key: "1d", label: "1D" },
+  { key: "1w", label: "1W" },
+  { key: "1m", label: "1M" },
+  { key: "all", label: "All" },
+];
 
 export function Dashboard() {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [range, setRange] = useState<RangeKey>("1d");
 
   useEffect(() => {
-    fetch("/api/analytics")
-      .then((r) => r.json())
-      .then(setData)
-      .catch((e) => setErr(String(e)));
+    fetch("/api/analytics").then((r) => r.json()).then(setData).catch((e) => setErr(String(e)));
   }, []);
 
   if (err) return <main className="p-8 text-[#ff5d5d]">{err}</main>;
   if (!data) return <main className="p-8 text-[#8d8a84]">Loading protocol stats…</main>;
 
-  const routerTx = data.routers.reduce((s, r) => s + r.tx24h, 0);
-  const traders = data.routers.reduce((s, r) => s + r.uniqueSenders, 0);
+  const w = data.windows[range] ?? data.windows["1d"];
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-10">
-      <header className="mb-10 flex flex-wrap items-end justify-between gap-4">
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-amber-400">Robinhood Chain · 4663</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">LISTED analytics</h1>
           <p className="mt-2 max-w-xl text-sm text-[#8d8a84]">
-            Read-only dashboard over the aggregator routers, 15 bps fee recipient, and Lighter perps that power{" "}
-            <a className="text-ivory underline decoration-amber-500/50" href="https://listed.exchange">listed.exchange</a>.
+            Volume from protocol fee inflows ({PROTOCOL_FEE_BPS} bps). Traders from unique router senders.
           </p>
         </div>
-        <div className="text-right text-xs text-[#8d8a84]">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#2a2a2e] px-3 py-1">
-            <span className={`h-1.5 w-1.5 rounded-full ${data.live ? "bg-[#37e39a]" : "bg-[#f5a524]"}`} />
-            {data.live ? "live sources" : "partial"}
+        <div className="flex flex-col items-end gap-2">
+          <div className="inline-flex rounded-full border border-[#2a2a2e] bg-[#141416] p-1">
+            {RANGES.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => setRange(r.key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  range === r.key ? "bg-amber-500 text-[#0c0c0d]" : "text-[#8d8a84] hover:text-ivory"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
-          <div className="mt-2">{new Date(data.generatedAt).toLocaleString()}</div>
+          <div className="text-xs text-[#8d8a84]">{new Date(data.generatedAt).toLocaleString()}</div>
         </div>
       </header>
 
       {data.notes.length > 0 && (
-        <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+        <div className="mb-6 space-y-1 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
           {data.notes.map((n) => (
             <p key={n}>{n}</p>
           ))}
         </div>
       )}
 
+      <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi label={`Volume · ${range.toUpperCase()}`} value={fmtUsd(w.volume)} hint={w.sampleComplete ? "fees ÷ 15 bps" : "sampled explorer pages"} />
+        <Kpi label={`Fees · ${range.toUpperCase()}`} value={fmtUsd(w.fees, 2)} hint={`${w.swaps} router txs in window`} />
+        <Kpi label="Total traders" value={fmtNum(data.traders.total)} hint="Unique from-addresses on routers" />
+        <Kpi label="Daily traders" value={fmtNum(data.traders.daily)} hint="Unique senders last 24h" />
+      </section>
       <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Router txs (sample)" value={fmtNum(routerTx)} hint="SwapRouter02 + Universal Router pages" />
-        <Kpi label="Unique senders" value={fmtNum(traders)} hint="From latest explorer pages" />
-        <Kpi label="Protocol fee" value={`${PROTOCOL_FEE_BPS} bps`} hint={`${data.feeRecipientTx24h} fee-recipient txs / 24h page`} />
+        <Kpi label="Wallets connected" value={fmtNum(data.traders.walletsConnected)} hint="On-chain proxy: unique swap senders" />
+        <Kpi label={`Traders · ${range.toUpperCase()}`} value={fmtNum(w.traders)} hint="Unique senders in selected window" />
+        <Kpi label="Fee recipient 24h" value={fmtNum(data.feeRecipientTx24h)} hint="Token + native inflows" />
         <Kpi label="Perps 24h volume" value={fmtUsd(data.perps.volume24h)} hint={`${data.perps.markets} Lighter markets`} />
       </section>
 
       <section className="mb-8 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Implied volume & fee capture">
-          <p className="mb-3 text-xs text-[#8d8a84]">
-            Placeholder series until swap logs are indexed. Fee assumes {PROTOCOL_FEE_BPS} bps of output.
-          </p>
+        <Card className="lg:col-span-2" title="Daily volume & fees (from fee recipient)">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data.volumeSeries}>
@@ -90,12 +96,12 @@ export function Dashboard() {
                 <YAxis stroke="#8d8a84" fontSize={11} />
                 <Tooltip contentStyle={{ background: "#141416", border: "1px solid #2a2a2e" }} />
                 <Area type="monotone" dataKey="volume" stroke="#f5a524" fill="url(#v)" />
+                <Area type="monotone" dataKey="fees" stroke="#37e39a" fill="transparent" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </Card>
         <Card title="Quote venue mix">
-          <p className="mb-3 text-xs text-[#8d8a84]">Design prior from aggregator paths (v2/v3/v4 + Rialto).</p>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.venueMix} layout="vertical">
@@ -120,7 +126,7 @@ export function Dashboard() {
             <thead className="text-left text-xs uppercase tracking-wide text-[#8d8a84]">
               <tr>
                 <th className="pb-2">Router</th>
-                <th className="pb-2">Txs</th>
+                <th className="pb-2">24h txs</th>
                 <th className="pb-2">Senders</th>
               </tr>
             </thead>
@@ -152,7 +158,7 @@ export function Dashboard() {
             ))}
           </ul>
           <p className="mt-4 text-xs text-[#8d8a84]">
-            Fee recipient {shortAddr(ADDRESSES.feeRecipient)} · WETH {shortAddr(ADDRESSES.weth)} · USDG {shortAddr(ADDRESSES.usdg)}
+            Fee recipient {shortAddr(ADDRESSES.feeRecipient)} · USDG {shortAddr(ADDRESSES.usdg)}
           </p>
         </Card>
       </section>
@@ -184,22 +190,11 @@ export function Dashboard() {
                     <td>{fmtUsd(m.openInterest)}</td>
                   </tr>
                 ))}
-                {data.perps.top.length === 0 && (
-                  <tr>
-                    <td className="py-6 text-[#8d8a84]" colSpan={5}>
-                      No Lighter books returned.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </Card>
       </section>
-
-      <footer className="mt-12 text-center text-xs text-[#8d8a84]">
-        Sourced from listed.exchange contracts + Blockscout + Lighter public API.
-      </footer>
     </main>
   );
 }
