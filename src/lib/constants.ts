@@ -8,8 +8,19 @@ export const PROTOCOL_FEE_BPS = Number(process.env.PROTOCOL_FEE_BPS ?? 30);
 
 export const CHAIN_ID = 4663;
 
-/** Public JSON-RPC for Robinhood Chain. Not behind Cloudflare (unlike Blockscout). */
-export const RPC_URL = process.env.ROBINHOOD_RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com";
+/**
+ * Public JSON-RPC endpoints for Robinhood Chain, tried in order with failover. The chain team's
+ * own `rpc.mainnet.chain.robinhood.com` bot-blocks datacenter IPs (it returns nothing to Vercel),
+ * so a community archive node leads. `ROBINHOOD_RPC_URL` (one URL or a comma-separated list)
+ * overrides the whole list.
+ */
+export const RPC_URLS: string[] = (
+  process.env.ROBINHOOD_RPC_URL?.split(",").map((s) => s.trim()).filter(Boolean) ?? [
+    "https://rpc.ordofi.network",
+    "https://rpc.mainnet.chain.robinhood.com",
+    "https://robinhood-rpc.publicnode.com",
+  ]
+);
 
 export const EXPLORER = "https://robinhoodchain.blockscout.com";
 export const EXPLORER_API = "https://robinhoodchain.blockscout.com/api/v2";

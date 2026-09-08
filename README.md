@@ -20,9 +20,11 @@ output skim (`30` bps, input-carve for xPath / Nordstern).
 | Fees by token | fee USD grouped by the skimmed token |
 | Fee wallet now | current ETH + ERC-20 balances of the fee recipient, marked to market |
 
-Data source: the public JSON-RPC at `rpc.mainnet.chain.robinhood.com` (`eth_getLogs` + batched
-`eth_getTransactionByHash` / `eth_getBlockByNumber` / `eth_call`). Blockscout is **not** used — it sits
-behind a Cloudflare JS challenge that blocks serverless fetches.
+Data source: Robinhood Chain JSON-RPC (`eth_getLogs` + batched `eth_getTransactionByHash` /
+`eth_getBlockByNumber` / `eth_call`), with failover across a list of endpoints — the chain team's
+own `rpc.mainnet.chain.robinhood.com` bot-blocks datacenter IPs (returns nothing from Vercel), so a
+community archive node (`rpc.ordofi.network`) leads. Blockscout is **not** used — it sits behind a
+Cloudflare JS challenge that blocks serverless fetches entirely.
 
 Addresses mirror `listed.exchange/src/lib/contracts/addresses.ts`:
 
@@ -46,7 +48,7 @@ npm run dev
 | Var | Default | Use |
 |---|---|---|
 | `PROTOCOL_FEE_BPS` | `30` | override if the product changes the skim before this repo is synced |
-| `ROBINHOOD_RPC_URL` | public RPC | point at a private / higher-limit RPC |
+| `ROBINHOOD_RPC_URL` | ordofi → official → publicnode | one URL or a comma-separated list; replaces the whole failover list (use a private / higher-limit RPC here) |
 | `ANALYTICS_START_BLOCK` | `0` | skip pre-launch history to speed up the log scan |
 
 ## Limits
@@ -58,8 +60,9 @@ npm run dev
   included in "Fee wallet now".
 - Tokens with no DexScreener pool show in the inflow ledger but are excluded from fee / volume totals
   (surfaced in `unpricedTokens`).
-- The public RPC rate-limits bursts. The route caches for 30s (`s-maxage`); under load a refresh can
-  come back `degraded: true` with partial numbers.
+- The public RPCs rate-limit bursts and some reject wide `eth_getLogs`. The route caches for 30s
+  (`s-maxage`), fails over between endpoints, and serves the last good read if a refresh fails; a
+  refresh that still can't complete comes back `degraded: true`.
 - "Implied volume" assumes every trade paid the full skim. Promo / zero-fee routes would undercount.
 
 ## Next (product-side)

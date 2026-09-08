@@ -121,6 +121,10 @@ function dayBuckets(now: number, fees: (start: number) => number) {
   });
 }
 
+// Last payload we successfully built, kept for the life of a warm lambda so a transient RPC
+// failure serves slightly stale numbers instead of a wall of zeros.
+let lastGood: AnalyticsPayload | null = null;
+
 export async function collectAnalytics(): Promise<AnalyticsPayload> {
   const notes: string[] = [];
   let degraded = false;
@@ -129,8 +133,20 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
   try {
     tip = toNum(await rpc<string>("eth_blockNumber", []));
   } catch {
+    if (lastGood) {
+      return {
+        ...lastGood,
+        degraded: true,
+        notes: [
+          `RPC unreachable on this refresh — showing the last good read from ${new Date(
+            lastGood.generatedAt,
+          ).toLocaleString()}.`,
+          ...lastGood.notes,
+        ],
+      };
+    }
     return emptyPayload(true, [
-      "Could not reach the Robinhood Chain RPC. Numbers are unavailable, not zero.",
+      "Could not reach any Robinhood Chain RPC endpoint. Numbers are unavailable, not zero.",
     ]);
   }
 
@@ -156,6 +172,7 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
     const base = emptyPayload(degraded, notes);
     base.blockScanned = scan.scannedFrom;
     base.treasuryUsd = await treasuryValue([]).catch(() => 0);
+    if (!degraded) lastGood = base;
     return base;
   }
 
@@ -339,7 +356,7 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
       `Log scan stopped at block ${scan.scannedFrom.toLocaleString()} (time budget). "Cumulative" and older windows are partial.`,
     );
 
-  return {
+  const payload: AnalyticsPayload = {
     generatedAt: new Date().toISOString(),
     live: priced.some((p) => p.priced),
     degraded,
@@ -356,6 +373,8 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
     feeByToken,
     volumeSeries,
   };
+  if (!degraded) lastGood = payload;
+  return payload;
 }
 
 function feeNote() {

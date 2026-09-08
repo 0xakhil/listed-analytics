@@ -1,31 +1,49 @@
-import { RPC_URL } from "./constants";
+import { RPC_URLS } from "./constants";
 
-/** A dependency-free JSON-RPC client. The public Robinhood Chain RPC rate-limits bursts with 403s,
- *  so callers should batch aggressively and keep concurrency low. */
+/** A dependency-free JSON-RPC client with multi-endpoint failover. Endpoints rate-limit bursts and
+ *  some reject wide `eth_getLogs`, so callers should batch aggressively and keep concurrency low. */
 
 type RpcError = { code: number; message: string };
 type RpcResponse<T> = { id: number; result?: T; error?: RpcError };
 
 export class RpcFailure extends Error {}
 
+const HEADERS = {
+  "content-type": "application/json",
+  accept: "application/json",
+  "user-agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+};
+
+// Remember which endpoint last worked so a warm lambda doesn't re-walk the dead ones every call.
+let preferred = 0;
+
+async function tryEndpoint(url: string, body: unknown, timeoutMs: number): Promise<unknown> {
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: HEADERS,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new RpcFailure(`${url}: HTTP ${res.status}`);
+  const json = await res.json();
+  // A single object carrying only an error is usually a provider-capability rejection
+  // (archive token required, block range too wide) — worth trying the next endpoint.
+  if (!Array.isArray(json) && json && typeof json === "object" && "error" in json && !("result" in json)) {
+    throw new RpcFailure(`${url}: ${(json as RpcResponse<unknown>).error?.message ?? "rpc error"}`);
+  }
+  return json;
+}
+
 async function post(body: unknown, timeoutMs: number): Promise<unknown> {
+  const order = [...RPC_URLS.slice(preferred), ...RPC_URLS.slice(0, preferred)];
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 250 * attempt * attempt));
+  for (const url of order) {
     try {
-      const res = await fetch(RPC_URL, {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (res.status === 429 || res.status === 403) {
-        lastErr = new RpcFailure(`rate limited (${res.status})`);
-        continue;
-      }
-      if (!res.ok) throw new RpcFailure(`HTTP ${res.status}`);
-      return await res.json();
+      const json = await tryEndpoint(url, body, timeoutMs);
+      preferred = RPC_URLS.indexOf(url);
+      return json;
     } catch (e) {
       lastErr = e;
     }
@@ -33,7 +51,7 @@ async function post(body: unknown, timeoutMs: number): Promise<unknown> {
   throw lastErr instanceof Error ? lastErr : new RpcFailure(String(lastErr));
 }
 
-export async function rpc<T>(method: string, params: unknown[], timeoutMs = 10_000): Promise<T> {
+export async function rpc<T>(method: string, params: unknown[], timeoutMs = 7_000): Promise<T> {
   const json = (await post({ jsonrpc: "2.0", id: 1, method, params }, timeoutMs)) as RpcResponse<T>;
   if (json.error) throw new RpcFailure(`${method}: ${json.error.message}`);
   if (json.result === undefined) throw new RpcFailure(`${method}: empty result`);
@@ -44,7 +62,7 @@ export async function rpc<T>(method: string, params: unknown[], timeoutMs = 10_0
  *  call that errored comes back as `null` rather than failing the whole batch. */
 export async function rpcBatch<T>(
   calls: { method: string; params: unknown[] }[],
-  timeoutMs = 15_000,
+  timeoutMs = 10_000,
 ): Promise<(T | null)[]> {
   if (calls.length === 0) return [];
   const body = calls.map((c, i) => ({ jsonrpc: "2.0", id: i, method: c.method, params: c.params }));
