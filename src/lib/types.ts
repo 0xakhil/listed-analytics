@@ -16,12 +16,19 @@ export type RouterStats = {
   lastTx?: string;
 };
 
+export type Holding = {
+  symbol: string;
+  amount: number;
+  usd: number;
+};
+
 export type AnalyticsPayload = {
   generatedAt: string;
   live: boolean;
   notes: string[];
   protocolFeeBps: number;
-  ethUsd: number;
+  treasuryUsd: number;
+  holdings: Holding[];
   traders: {
     total: number;
     daily: number;
