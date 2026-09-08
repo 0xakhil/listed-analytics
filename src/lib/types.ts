@@ -11,40 +11,49 @@ export type WindowStats = {
 export type RouterStats = {
   address: string;
   label: string;
-  tx24h: number;
-  uniqueSenders: number;
+  feesUsd: number;
+  swaps: number;
+  uniqueTraders: number;
   lastTx?: string;
 };
 
 export type Holding = {
   symbol: string;
+  address: string;
   amount: number;
   usd: number;
+  priced: boolean;
 };
 
 export type FeeInflow = {
   ts: string;
   symbol: string;
+  address: string;
   amount: number;
   usd: number;
-  from: string;
+  priced: boolean;
+  trader: string;
+  router: string;
+  routerLabel: string;
+  tx: string;
 };
 
 export type AnalyticsPayload = {
   generatedAt: string;
+  /** true once at least one priced fee inflow has been observed. */
   live: boolean;
+  /** true when an upstream data source failed and the numbers below are incomplete. */
+  degraded: boolean;
   notes: string[];
   protocolFeeBps: number;
+  blockScanned: number;
   treasuryUsd: number;
   holdings: Holding[];
   inflows: FeeInflow[];
-  traders: {
-    total: number;
-    daily: number;
-    walletsConnected: number;
-  };
+  unpricedTokens: string[];
+  traders: { total: number; daily: number };
   windows: Record<RangeKey, WindowStats>;
   routers: RouterStats[];
-  venueMix: { name: string; share: number }[];
+  feeByToken: { name: string; usd: number; share: number }[];
   volumeSeries: { t: string; volume: number; fees: number }[];
 };
