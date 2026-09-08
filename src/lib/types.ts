@@ -22,6 +22,14 @@ export type Holding = {
   usd: number;
 };
 
+export type FeeInflow = {
+  ts: string;
+  symbol: string;
+  amount: number;
+  usd: number;
+  from: string;
+};
+
 export type AnalyticsPayload = {
   generatedAt: string;
   live: boolean;
@@ -29,6 +37,7 @@ export type AnalyticsPayload = {
   protocolFeeBps: number;
   treasuryUsd: number;
   holdings: Holding[];
+  inflows: FeeInflow[];
   traders: {
     total: number;
     daily: number;
