@@ -9,18 +9,17 @@ import {
 } from "recharts";
 
 const COLORS = ["#f5a524", "#37e39a", "#8b7bff", "#6ec8ff", "#ff5d5d"];
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "1h", label: "1H" },
+const STRIP: { key: RangeKey; label: string }[] = [
   { key: "1d", label: "1D" },
   { key: "1w", label: "1W" },
   { key: "1m", label: "1M" },
-  { key: "all", label: "All" },
+  { key: "all", label: "Cumulative" },
 ];
 
 export function Dashboard() {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [range, setRange] = useState<RangeKey>("all");
+  const [range, setRange] = useState<RangeKey>("1d");
 
   useEffect(() => {
     fetch("/api/analytics").then((r) => r.json()).then(setData).catch((e) => setErr(String(e)));
@@ -29,7 +28,7 @@ export function Dashboard() {
   if (err) return <main className="p-8 text-[#ff5d5d]">{err}</main>;
   if (!data) return <main className="p-8 text-[#8d8a84]">Loading protocol stats…</main>;
 
-  const w = data.windows[range] ?? data.windows.all;
+  const w = data.windows[range] ?? data.windows["1d"];
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-10">
@@ -38,25 +37,10 @@ export function Dashboard() {
           <p className="text-xs uppercase tracking-[0.2em] text-amber-400">Robinhood Chain · 4663</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">LISTED analytics</h1>
           <p className="mt-2 max-w-xl text-sm text-[#8d8a84]">
-            Realized fees at {shortAddr(ADDRESSES.feeRecipient)}. Volume is those fees ÷ {PROTOCOL_FEE_BPS} bps.
+            Fees = tokens actually sent to {shortAddr(ADDRESSES.feeRecipient)}. Volume = fees ÷ {PROTOCOL_FEE_BPS} bps.
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="inline-flex rounded-full border border-[#2a2a2e] bg-[#141416] p-1">
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                onClick={() => setRange(r.key)}
-                className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  range === r.key ? "bg-amber-500 text-[#0c0c0d]" : "text-[#8d8a84] hover:text-ivory"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-          <div className="text-xs text-[#8d8a84]">{new Date(data.generatedAt).toLocaleString()}</div>
-        </div>
+        <div className="text-xs text-[#8d8a84]">{new Date(data.generatedAt).toLocaleString()}</div>
       </header>
 
       {data.notes.length > 0 && (
@@ -67,20 +51,42 @@ export function Dashboard() {
         </div>
       )}
 
-      <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Fee wallet now" value={fmtUsd(data.treasuryUsd, 2)} hint={shortAddr(ADDRESSES.feeRecipient)} />
-        <Kpi label={`Fees taken · ${range.toUpperCase()}`} value={fmtUsd(w.fees, 2)} hint={`${w.swaps} inbound transfers`} />
-        <Kpi label={`Implied volume · ${range.toUpperCase()}`} value={fmtUsd(w.volume, 2)} hint={`fees ÷ ${PROTOCOL_FEE_BPS} bps`} />
-        <Kpi label={`Fee payers · ${range.toUpperCase()}`} value={fmtNum(w.traders)} hint="Unique senders into the fee wallet" />
+      <p className="mb-2 text-xs uppercase tracking-wide text-[#8d8a84]">Implied volume</p>
+      <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {STRIP.map((r) => (
+          <button key={r.key} onClick={() => setRange(r.key)} className="text-left">
+            <Kpi
+              label={r.label}
+              value={fmtUsd(data.windows[r.key].volume, 2)}
+              hint={`fees ${fmtUsd(data.windows[r.key].fees, 2)} ÷ 15 bps`}
+              active={range === r.key}
+            />
+          </button>
+        ))}
       </section>
-      <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Kpi label="Total fee payers" value={fmtNum(data.traders.total)} hint="Unique addresses that paid fees" />
-        <Kpi label="Daily fee payers" value={fmtNum(data.traders.daily)} hint="Last 24h into fee wallet" />
-        <Kpi label="Wallets connected" value={fmtNum(data.traders.walletsConnected)} hint="Same as fee payers (no connect log)" />
+
+      <p className="mb-2 text-xs uppercase tracking-wide text-[#8d8a84]">Fees taken</p>
+      <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {STRIP.map((r) => (
+          <Kpi
+            key={r.key}
+            label={r.label}
+            value={fmtUsd(data.windows[r.key].fees, 2)}
+            hint={`${data.windows[r.key].swaps} inflows`}
+            active={range === r.key}
+          />
+        ))}
+      </section>
+
+      <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi label="Fee wallet now" value={fmtUsd(data.treasuryUsd, 2)} hint="Live balances, marked to market" />
+        <Kpi label="Fee payers · selected" value={fmtNum(w.traders)} hint="Unique senders in highlighted window" />
+        <Kpi label="Total fee payers" value={fmtNum(data.traders.total)} hint="All-time unique payers" />
+        <Kpi label="Daily fee payers" value={fmtNum(data.traders.daily)} hint="Last 24h" />
       </section>
 
       <section className="mb-8 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Daily realized fees and implied volume">
+        <Card className="lg:col-span-2" title="Daily implied volume">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data.volumeSeries}>
@@ -95,7 +101,6 @@ export function Dashboard() {
                 <YAxis stroke="#8d8a84" fontSize={11} />
                 <Tooltip contentStyle={{ background: "#141416", border: "1px solid #2a2a2e" }} />
                 <Area type="monotone" dataKey="volume" stroke="#f5a524" fill="url(#v)" />
-                <Area type="monotone" dataKey="fees" stroke="#37e39a" fill="transparent" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -113,22 +118,41 @@ export function Dashboard() {
               {data.holdings.slice(0, 8).map((h) => (
                 <tr key={h.symbol} className="border-t border-[#2a2a2e]">
                   <td className="py-2">{h.symbol}</td>
-                  <td>{fmtNum(h.amount, 4)}</td>
+                  <td>{fmtNum(h.amount, 6)}</td>
                   <td>{fmtUsd(h.usd, 2)}</td>
                 </tr>
               ))}
-              {data.holdings.length === 0 && (
-                <tr>
-                  <td className="py-4 text-[#8d8a84]" colSpan={3}>No priced balances</td>
-                </tr>
-              )}
             </tbody>
           </table>
         </Card>
       </section>
 
       <section className="mb-8 grid gap-4 md:grid-cols-2">
-        <Card title="Fee mix by token">
+        <Card title="Every inflow that built the volume number">
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-[#8d8a84]">
+                <tr>
+                  <th className="pb-2">When</th>
+                  <th className="pb-2">Token</th>
+                  <th className="pb-2">USD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.inflows.map((f, i) => (
+                  <tr key={`${f.ts}-${i}`} className="border-t border-[#2a2a2e]">
+                    <td className="py-2 text-xs text-[#8d8a84]">{new Date(f.ts).toLocaleString()}</td>
+                    <td>
+                      {fmtNum(f.amount, 6)} {f.symbol}
+                    </td>
+                    <td>{fmtUsd(f.usd, 4)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+        <Card title="Fee mix / venues">
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.venueMix} layout="vertical">
@@ -144,15 +168,10 @@ export function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </Card>
-        <Card title="How LISTED prices a swap">
-          <ul className="space-y-2 text-sm text-[#cfcbc2]">
+          <ul className="mt-4 space-y-2 text-sm text-[#cfcbc2]">
             {VENUES.map((v) => (
-              <li key={v.id} className="flex gap-3">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                <span>
-                  <strong className="text-ivory">{v.label}.</strong> {v.role}
-                </span>
+              <li key={v.id}>
+                <strong className="text-ivory">{v.label}.</strong> {v.role}
               </li>
             ))}
           </ul>
@@ -167,9 +186,19 @@ export function Dashboard() {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  active = false,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  active?: boolean;
+}) {
   return (
-    <div className="rounded-2xl border border-[#2a2a2e] bg-[#141416] p-4">
+    <div className={`rounded-2xl border p-4 ${active ? "border-amber-500/50 bg-[#1a1610]" : "border-[#2a2a2e] bg-[#141416]"}`}>
       <div className="text-xs uppercase tracking-wide text-[#8d8a84]">{label}</div>
       <div className="mt-1 text-2xl font-semibold">{value}</div>
       <div className="mt-1 text-[11px] text-[#6f6c66]">{hint}</div>
