@@ -1,5 +1,5 @@
 import { ADDRESSES, EXPLORER_API, EXPLORER_HEADERS, PROTOCOL_FEE_BPS } from "./constants";
-import type { AnalyticsPayload, Holding, RangeKey, RouterStats, WindowStats } from "./types";
+import type { AnalyticsPayload, FeeInflow, Holding, RangeKey, RouterStats, WindowStats } from "./types";
 
 type Page<T> = { items?: T[]; next_page_params?: Record<string, unknown> | null };
 type Tx = { timestamp?: string; hash?: string; from?: { hash?: string }; value?: string; status?: string };
@@ -61,9 +61,12 @@ function emptyWindows(): Record<RangeKey, WindowStats> {
   return { "1h": z(), "1d": z(), "1w": z(), "1m": z(), all: z() };
 }
 
-function transferUsd(t: Transfer): number {
+function tokenAmount(t: Transfer): number {
   const dec = Number(t.total?.decimals ?? t.token?.decimals ?? 18);
-  const amount = Number(t.total?.value ?? "0") / 10 ** (Number.isFinite(dec) ? dec : 18);
+  return Number(t.total?.value ?? "0") / 10 ** (Number.isFinite(dec) ? dec : 18);
+}
+
+function transferUsd(t: Transfer, amount: number): number {
   const px = Number(t.token?.exchange_rate ?? "0");
   if (!amount) return 0;
   if (px > 0) return amount * px;
@@ -82,15 +85,17 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
     feed<Tx>(`/addresses/${ADDRESSES.universalRouter}/transactions?filter=to`, 4),
   ]);
 
-  type FeeLeg = { ts: number; usd: number; trader?: string; symbol: string };
+  type FeeLeg = { ts: number; usd: number; amount: number; trader?: string; symbol: string };
   const inbound: FeeLeg[] = [];
   for (const t of feeTransfers) {
     if (t.to?.hash?.toLowerCase() !== FEE) continue;
-    const usd = transferUsd(t);
+    const amount = tokenAmount(t);
+    const usd = transferUsd(t, amount);
     if (usd <= 0) continue;
     inbound.push({
       ts: t.timestamp ? +new Date(t.timestamp) : 0,
       usd,
+      amount,
       trader: t.from?.hash?.toLowerCase(),
       symbol: t.token?.symbol ?? "?",
     });
@@ -101,6 +106,7 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
     inbound.push({
       ts: t.timestamp ? +new Date(t.timestamp) : 0,
       usd: eth * 2480,
+      amount: eth,
       trader: t.from?.hash?.toLowerCase(),
       symbol: "ETH",
     });
@@ -170,10 +176,20 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
     return { t: new Date(dayStart).toISOString().slice(5, 10), fees, volume: FEE_RATE > 0 ? fees / FEE_RATE : 0 };
   });
 
+  const inflows: FeeInflow[] = inbound
+    .slice()
+    .sort((a, b) => b.ts - a.ts)
+    .map((f) => ({
+      ts: new Date(f.ts).toISOString(),
+      symbol: f.symbol,
+      amount: f.amount,
+      usd: f.usd,
+      from: f.trader ?? "",
+    }));
+
   notes.push(
-    `Fees are realized ERC-20 + ETH inflows to ${ADDRESSES.feeRecipient}. Volume = fees ÷ ${PROTOCOL_FEE_BPS} bps. Treasury is the live token balance of that wallet — not Uniswap router flow.`,
+    `Every fee number is a Blockscout inbound transfer to ${ADDRESSES.feeRecipient}, marked to market. Implied volume = those USD fees ÷ 0.0015. It is not router notional and it is not the cash sitting in the wallet after price moves.`,
   );
-  if (!inbound.length) notes.push("No fee-wallet transfers returned from Blockscout.");
 
   return {
     generatedAt: new Date().toISOString(),
@@ -182,6 +198,7 @@ export async function collectAnalytics(): Promise<AnalyticsPayload> {
     protocolFeeBps: PROTOCOL_FEE_BPS,
     treasuryUsd,
     holdings,
+    inflows,
     traders: { total: allTraders.size, daily: dailyTraders.size, walletsConnected: allTraders.size },
     windows,
     routers,
