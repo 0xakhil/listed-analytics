@@ -1,3 +1,13 @@
+export type RangeKey = "1h" | "1d" | "1w" | "1m" | "all";
+
+export type WindowStats = {
+  volume: number;
+  fees: number;
+  swaps: number;
+  traders: number;
+  sampleComplete: boolean;
+};
+
 export type RouterStats = {
   address: string;
   label: string;
@@ -19,9 +29,15 @@ export type AnalyticsPayload = {
   generatedAt: string;
   live: boolean;
   notes: string[];
-  routers: RouterStats[];
-  feeRecipientTx24h: number;
   protocolFeeBps: number;
+  feeRecipientTx24h: number;
+  traders: {
+    total: number;
+    daily: number;
+    walletsConnected: number;
+  };
+  windows: Record<RangeKey, WindowStats>;
+  routers: RouterStats[];
   perps: {
     markets: number;
     volume24h: number;
