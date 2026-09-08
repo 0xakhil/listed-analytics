@@ -16,21 +16,12 @@ export type RouterStats = {
   lastTx?: string;
 };
 
-export type PerpMarket = {
-  symbol: string;
-  mark: number;
-  change24h: number;
-  volume24h: number;
-  openInterest: number;
-  funding: number;
-};
-
 export type AnalyticsPayload = {
   generatedAt: string;
   live: boolean;
   notes: string[];
   protocolFeeBps: number;
-  feeRecipientTx24h: number;
+  ethUsd: number;
   traders: {
     total: number;
     daily: number;
@@ -38,12 +29,6 @@ export type AnalyticsPayload = {
   };
   windows: Record<RangeKey, WindowStats>;
   routers: RouterStats[];
-  perps: {
-    markets: number;
-    volume24h: number;
-    openInterest: number;
-    top: PerpMarket[];
-  };
   venueMix: { name: string; share: number }[];
   volumeSeries: { t: string; volume: number; fees: number }[];
 };
