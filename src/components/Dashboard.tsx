@@ -20,7 +20,7 @@ const RANGES: { key: RangeKey; label: string }[] = [
 export function Dashboard() {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [range, setRange] = useState<RangeKey>("1d");
+  const [range, setRange] = useState<RangeKey>("all");
 
   useEffect(() => {
     fetch("/api/analytics").then((r) => r.json()).then(setData).catch((e) => setErr(String(e)));
@@ -29,7 +29,7 @@ export function Dashboard() {
   if (err) return <main className="p-8 text-[#ff5d5d]">{err}</main>;
   if (!data) return <main className="p-8 text-[#8d8a84]">Loading protocol stats…</main>;
 
-  const w = data.windows[range] ?? data.windows["1d"];
+  const w = data.windows[range] ?? data.windows.all;
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-10">
@@ -38,7 +38,7 @@ export function Dashboard() {
           <p className="text-xs uppercase tracking-[0.2em] text-amber-400">Robinhood Chain · 4663</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">LISTED analytics</h1>
           <p className="mt-2 max-w-xl text-sm text-[#8d8a84]">
-            DEX aggregator only. Volume from SwapRouter02 + Universal Router. Implied fee {PROTOCOL_FEE_BPS} bps.
+            Realized fees at {shortAddr(ADDRESSES.feeRecipient)}. Volume is those fees ÷ {PROTOCOL_FEE_BPS} bps.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -68,19 +68,19 @@ export function Dashboard() {
       )}
 
       <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label={`Volume · ${range.toUpperCase()}`} value={fmtUsd(w.volume)} hint={`ETH @ $${fmtNum(data.ethUsd, 0)} + USDG legs`} />
-        <Kpi label={`Fees · ${range.toUpperCase()}`} value={fmtUsd(w.fees, 2)} hint={`${PROTOCOL_FEE_BPS} bps of volume`} />
-        <Kpi label={`Swaps · ${range.toUpperCase()}`} value={fmtNum(w.swaps)} hint="Router txs in window" />
-        <Kpi label={`Traders · ${range.toUpperCase()}`} value={fmtNum(w.traders)} hint="Unique senders in window" />
+        <Kpi label="Fee wallet now" value={fmtUsd(data.treasuryUsd, 2)} hint={shortAddr(ADDRESSES.feeRecipient)} />
+        <Kpi label={`Fees taken · ${range.toUpperCase()}`} value={fmtUsd(w.fees, 2)} hint={`${w.swaps} inbound transfers`} />
+        <Kpi label={`Implied volume · ${range.toUpperCase()}`} value={fmtUsd(w.volume, 2)} hint={`fees ÷ ${PROTOCOL_FEE_BPS} bps`} />
+        <Kpi label={`Fee payers · ${range.toUpperCase()}`} value={fmtNum(w.traders)} hint="Unique senders into the fee wallet" />
       </section>
       <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Kpi label="Total traders" value={fmtNum(data.traders.total)} hint="Unique from-addresses on routers" />
-        <Kpi label="Daily traders" value={fmtNum(data.traders.daily)} hint="Unique senders last 24h" />
-        <Kpi label="Wallets connected" value={fmtNum(data.traders.walletsConnected)} hint="Same set as total traders (no connect log)" />
+        <Kpi label="Total fee payers" value={fmtNum(data.traders.total)} hint="Unique addresses that paid fees" />
+        <Kpi label="Daily fee payers" value={fmtNum(data.traders.daily)} hint="Last 24h into fee wallet" />
+        <Kpi label="Wallets connected" value={fmtNum(data.traders.walletsConnected)} hint="Same as fee payers (no connect log)" />
       </section>
 
       <section className="mb-8 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Daily aggregator volume & implied fees">
+        <Card className="lg:col-span-2" title="Daily realized fees and implied volume">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data.volumeSeries}>
@@ -100,13 +100,41 @@ export function Dashboard() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <Card title="Router mix (by volume)">
-          <div className="h-56">
+        <Card title="Fee wallet holdings">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wide text-[#8d8a84]">
+              <tr>
+                <th className="pb-2">Token</th>
+                <th className="pb-2">Amount</th>
+                <th className="pb-2">USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.holdings.slice(0, 8).map((h) => (
+                <tr key={h.symbol} className="border-t border-[#2a2a2e]">
+                  <td className="py-2">{h.symbol}</td>
+                  <td>{fmtNum(h.amount, 4)}</td>
+                  <td>{fmtUsd(h.usd, 2)}</td>
+                </tr>
+              ))}
+              {data.holdings.length === 0 && (
+                <tr>
+                  <td className="py-4 text-[#8d8a84]" colSpan={3}>No priced balances</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
+      </section>
+
+      <section className="mb-8 grid gap-4 md:grid-cols-2">
+        <Card title="Fee mix by token">
+          <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.venueMix} layout="vertical">
                 <CartesianGrid stroke="#2a2a2e" horizontal={false} />
                 <XAxis type="number" stroke="#8d8a84" fontSize={11} />
-                <YAxis type="category" dataKey="name" stroke="#8d8a84" fontSize={11} width={120} />
+                <YAxis type="category" dataKey="name" stroke="#8d8a84" fontSize={11} width={70} />
                 <Tooltip contentStyle={{ background: "#141416", border: "1px solid #2a2a2e" }} />
                 <Bar dataKey="share" radius={4}>
                   {data.venueMix.map((_, i) => (
@@ -116,34 +144,6 @@ export function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </Card>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <Card title="Settlement routers">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-[#8d8a84]">
-              <tr>
-                <th className="pb-2">Router</th>
-                <th className="pb-2">24h txs</th>
-                <th className="pb-2">Senders</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.routers.map((r) => (
-                <tr key={r.address} className="border-t border-[#2a2a2e]">
-                  <td className="py-2">
-                    <div>{r.label}</div>
-                    <a className="text-xs text-[#8d8a84] hover:text-ivory" href={`${EXPLORER}/address/${r.address}`}>
-                      {shortAddr(r.address)}
-                    </a>
-                  </td>
-                  <td>{r.tx24h}</td>
-                  <td>{r.uniqueSenders}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </Card>
         <Card title="How LISTED prices a swap">
           <ul className="space-y-2 text-sm text-[#cfcbc2]">
@@ -157,7 +157,9 @@ export function Dashboard() {
             ))}
           </ul>
           <p className="mt-4 text-xs text-[#8d8a84]">
-            Fee recipient {shortAddr(ADDRESSES.feeRecipient)} · USDG {shortAddr(ADDRESSES.usdg)}
+            <a className="underline decoration-amber-500/40" href={`${EXPLORER}/address/${ADDRESSES.feeRecipient}`}>
+              {ADDRESSES.feeRecipient}
+            </a>
           </p>
         </Card>
       </section>
