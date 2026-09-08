@@ -1,8 +1,21 @@
-export const PROTOCOL_FEE_BPS = 15;
+/**
+ * Protocol fee, in basis points, skimmed from swap output and sent to the fee recipient.
+ * Mirrors `PROTOCOL_FEE_BPS` in listed.exchange (`src/lib/contracts/addresses.ts`). There is no
+ * on-chain source of truth for this — the product applies it in calldata — so it is kept in sync
+ * here and can be overridden without a redeploy via the `PROTOCOL_FEE_BPS` env var.
+ */
+export const PROTOCOL_FEE_BPS = Number(process.env.PROTOCOL_FEE_BPS ?? 30);
+
 export const CHAIN_ID = 4663;
-export const EXPLORER_API = "https://robinhoodchain.blockscout.com/api/v2";
+
+/** Public JSON-RPC for Robinhood Chain. Not behind Cloudflare (unlike Blockscout). */
+export const RPC_URL = process.env.ROBINHOOD_RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com";
+
 export const EXPLORER = "https://robinhoodchain.blockscout.com";
-export const LIGHTER_API = "https://api.rh.lighter.xyz/api/v1";
+export const EXPLORER_API = "https://robinhoodchain.blockscout.com/api/v2";
+
+/** keccak256("Transfer(address,address,uint256)") */
+export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 export const ADDRESSES = {
   feeRecipient: "0x65DbA8896387EF19F1A9eCA399B856D2E3B35D1B",
@@ -18,16 +31,24 @@ export const ADDRESSES = {
   permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
 } as const;
 
-export const EXPLORER_HEADERS: Record<string, string> = {
-  "user-agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  accept: "application/json",
+/** Tokens we treat as $1 when no market price is available. */
+export const STABLES: Record<string, number> = {
+  [ADDRESSES.usdg.toLowerCase()]: 1,
 };
 
+/** Router / relay addresses we can name on sight. Rialto's live router is resolved at runtime
+ *  from the registry and merged in on top of this. Lowercased keys. */
+export const ROUTER_LABELS: Record<string, string> = {
+  [ADDRESSES.swapRouter02.toLowerCase()]: "Uniswap SwapRouter02",
+  [ADDRESSES.universalRouter.toLowerCase()]: "Uniswap Universal Router",
+};
+
+/** How routing works on listed.exchange — static reference, not a measured fill split. */
 export const VENUES = [
   { id: "v4", label: "Uniswap v4", role: "Quoted via v4 Quoter across live fee tiers" },
   { id: "v3", label: "Uniswap v3", role: "SwapRouter02 multicall + sweepTokenWithFee" },
   { id: "v2", label: "Uniswap v2", role: "getAmountsOut quote; ERC-20 allowance path" },
-  { id: "rialto", label: "Rialto", role: "Best-execution + propAMM; router from registry" },
-  { id: "xpath", label: "xPath / Nordstern", role: "Fee carved from input (cannot skim output)" },
+  { id: "rialto", label: "Rialto", role: "Best-execution + propAMM; router resolved from registry" },
+  { id: "nordstern", label: "Nordstern", role: "External aggregator; fee carved from input" },
+  { id: "xpath", label: "xPath", role: "Fee carved from input (cannot skim output)" },
 ] as const;
