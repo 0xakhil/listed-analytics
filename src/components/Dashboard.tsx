@@ -1,7 +1,7 @@
 "use client";
 
 import { ADDRESSES, EXPLORER, PROTOCOL_FEE_BPS, VENUES } from "@/lib/constants";
-import { fmtNum, fmtUsd, pct, shortAddr } from "@/lib/format";
+import { fmtNum, fmtUsd, shortAddr } from "@/lib/format";
 import type { AnalyticsPayload, RangeKey } from "@/lib/types";
 import { useEffect, useState } from "react";
 import {
@@ -38,7 +38,7 @@ export function Dashboard() {
           <p className="text-xs uppercase tracking-[0.2em] text-amber-400">Robinhood Chain · 4663</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">LISTED analytics</h1>
           <p className="mt-2 max-w-xl text-sm text-[#8d8a84]">
-            Volume from protocol fee inflows ({PROTOCOL_FEE_BPS} bps). Traders from unique router senders.
+            DEX aggregator only. Volume from SwapRouter02 + Universal Router. Implied fee {PROTOCOL_FEE_BPS} bps.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -68,20 +68,19 @@ export function Dashboard() {
       )}
 
       <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label={`Volume · ${range.toUpperCase()}`} value={fmtUsd(w.volume)} hint={w.sampleComplete ? "fees ÷ 15 bps" : "sampled explorer pages"} />
-        <Kpi label={`Fees · ${range.toUpperCase()}`} value={fmtUsd(w.fees, 2)} hint={`${w.swaps} router txs in window`} />
+        <Kpi label={`Volume · ${range.toUpperCase()}`} value={fmtUsd(w.volume)} hint={`ETH @ $${fmtNum(data.ethUsd, 0)} + USDG legs`} />
+        <Kpi label={`Fees · ${range.toUpperCase()}`} value={fmtUsd(w.fees, 2)} hint={`${PROTOCOL_FEE_BPS} bps of volume`} />
+        <Kpi label={`Swaps · ${range.toUpperCase()}`} value={fmtNum(w.swaps)} hint="Router txs in window" />
+        <Kpi label={`Traders · ${range.toUpperCase()}`} value={fmtNum(w.traders)} hint="Unique senders in window" />
+      </section>
+      <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3">
         <Kpi label="Total traders" value={fmtNum(data.traders.total)} hint="Unique from-addresses on routers" />
         <Kpi label="Daily traders" value={fmtNum(data.traders.daily)} hint="Unique senders last 24h" />
-      </section>
-      <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Wallets connected" value={fmtNum(data.traders.walletsConnected)} hint="On-chain proxy: unique swap senders" />
-        <Kpi label={`Traders · ${range.toUpperCase()}`} value={fmtNum(w.traders)} hint="Unique senders in selected window" />
-        <Kpi label="Fee recipient 24h" value={fmtNum(data.feeRecipientTx24h)} hint="Token + native inflows" />
-        <Kpi label="Perps 24h volume" value={fmtUsd(data.perps.volume24h)} hint={`${data.perps.markets} Lighter markets`} />
+        <Kpi label="Wallets connected" value={fmtNum(data.traders.walletsConnected)} hint="Same set as total traders (no connect log)" />
       </section>
 
       <section className="mb-8 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Daily volume & fees (from fee recipient)">
+        <Card className="lg:col-span-2" title="Daily aggregator volume & implied fees">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data.volumeSeries}>
@@ -101,13 +100,13 @@ export function Dashboard() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <Card title="Quote venue mix">
+        <Card title="Router mix (by volume)">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.venueMix} layout="vertical">
                 <CartesianGrid stroke="#2a2a2e" horizontal={false} />
                 <XAxis type="number" stroke="#8d8a84" fontSize={11} />
-                <YAxis type="category" dataKey="name" stroke="#8d8a84" fontSize={11} width={90} />
+                <YAxis type="category" dataKey="name" stroke="#8d8a84" fontSize={11} width={120} />
                 <Tooltip contentStyle={{ background: "#141416", border: "1px solid #2a2a2e" }} />
                 <Bar dataKey="share" radius={4}>
                   {data.venueMix.map((_, i) => (
@@ -120,7 +119,7 @@ export function Dashboard() {
         </Card>
       </section>
 
-      <section className="mb-8 grid gap-4 md:grid-cols-2">
+      <section className="grid gap-4 md:grid-cols-2">
         <Card title="Settlement routers">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-[#8d8a84]">
@@ -160,39 +159,6 @@ export function Dashboard() {
           <p className="mt-4 text-xs text-[#8d8a84]">
             Fee recipient {shortAddr(ADDRESSES.feeRecipient)} · USDG {shortAddr(ADDRESSES.usdg)}
           </p>
-        </Card>
-      </section>
-
-      <section>
-        <Card title="Lighter perps (USDG-margined)">
-          <div className="mb-3 flex gap-6 text-sm text-[#8d8a84]">
-            <span>OI {fmtUsd(data.perps.openInterest)}</span>
-            <span>24h vol {fmtUsd(data.perps.volume24h)}</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-[#8d8a84]">
-                <tr>
-                  <th className="pb-2">Market</th>
-                  <th className="pb-2">Mark</th>
-                  <th className="pb-2">24h</th>
-                  <th className="pb-2">Volume</th>
-                  <th className="pb-2">OI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.perps.top.map((m) => (
-                  <tr key={m.symbol} className="border-t border-[#2a2a2e]">
-                    <td className="py-2 font-medium">{m.symbol}</td>
-                    <td>{fmtNum(m.mark, 2)}</td>
-                    <td className={m.change24h >= 0 ? "text-[#37e39a]" : "text-[#ff5d5d]"}>{pct(m.change24h)}</td>
-                    <td>{fmtUsd(m.volume24h)}</td>
-                    <td>{fmtUsd(m.openInterest)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </Card>
       </section>
     </main>
