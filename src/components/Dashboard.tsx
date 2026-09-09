@@ -12,18 +12,9 @@ type DailyRow = { date: string; volume: number; cumulative: number; wallets: num
 function seriesFor(data: AnalyticsPayload): DailyRow[] {
   const trailingVolume = data.volumeSeries.reduce((sum, point) => sum + point.volume, 0);
   let cumulative = Math.max(0, data.windows.all.volume - trailingVolume);
-  const walletsByDate = new Map<string, Set<string>>();
-
-  for (const inflow of data.inflows) {
-    const date = new Date(inflow.ts).toISOString().slice(5, 10);
-    const wallets = walletsByDate.get(date) ?? new Set<string>();
-    wallets.add(inflow.trader.toLowerCase());
-    walletsByDate.set(date, wallets);
-  }
-
   return data.volumeSeries.map((point) => {
     cumulative += point.volume;
-    return { date: point.t, volume: point.volume, cumulative, wallets: walletsByDate.get(point.t)?.size ?? 0 };
+    return { date: point.t, volume: point.volume, cumulative, wallets: point.wallets ?? 0 };
   });
 }
 
