@@ -15,6 +15,7 @@ const STRIP: { key: RangeKey; label: string }[] = [
   { key: "1m", label: "1M" },
   { key: "all", label: "Cumulative" },
 ];
+const FEE_SCENARIOS = [1, 5, 10] as const;
 
 export function Dashboard() {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
@@ -31,6 +32,10 @@ export function Dashboard() {
   const w = data.windows[range] ?? data.windows["1d"];
   const bps = data.protocolFeeBps;
   const rateLabel = `${bps} bps`;
+  const feeScenarios = FEE_SCENARIOS.map((scenarioBps) => ({
+    bps: scenarioBps,
+    feeUsd: w.volume * scenarioBps / 10_000,
+  }));
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-10">
@@ -81,6 +86,24 @@ export function Dashboard() {
             />
           </button>
         ))}
+      </section>
+
+      <section className="mb-8 rounded-2xl border border-[#2a2a2e] bg-[#141416] p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-[#8d8a84]">Fee simulator · selected period</p>
+            <h2 className="mt-1 text-lg font-medium">What {fmtUsd(w.volume, 2)} of volume earns</h2>
+          </div>
+          <p className="text-xs text-[#8d8a84]">Gross protocol fees before rebates or revenue share</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {feeScenarios.map((scenario) => (
+            <div key={scenario.bps} className="rounded-xl border border-[#2a2a2e] bg-[#101012] p-4">
+              <p className="text-xs uppercase tracking-wide text-[#8d8a84]">{scenario.bps} bps · {(scenario.bps / 100).toFixed(2)}%</p>
+              <p className="mt-2 text-2xl font-semibold">{fmtUsd(scenario.feeUsd, 2)}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <p className="mb-2 text-xs uppercase tracking-wide text-[#8d8a84]">Fees taken</p>
@@ -193,7 +216,7 @@ export function Dashboard() {
                   <YAxis type="category" dataKey="name" stroke="#8d8a84" fontSize={11} width={70} />
                   <Tooltip
                     contentStyle={{ background: "#141416", border: "1px solid #2a2a2e" }}
-                    formatter={(v: number | string) => [fmtUsd(Number(v), 2), "fees"]}
+                    formatter={(value) => [fmtUsd(Number(value ?? 0), 2), "fees"]}
                   />
                   <Bar dataKey="usd" radius={4}>
                     {data.feeByToken.map((_, i) => (
