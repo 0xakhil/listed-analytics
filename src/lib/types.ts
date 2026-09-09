@@ -55,5 +55,5 @@ export type AnalyticsPayload = {
   windows: Record<RangeKey, WindowStats>;
   routers: RouterStats[];
   feeByToken: { name: string; usd: number; share: number }[];
-  volumeSeries: { t: string; volume: number; fees: number }[];
+  volumeSeries: { t: string; volume: number; fees: number; wallets?: number }[];
 };
