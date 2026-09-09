@@ -7,7 +7,11 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 const usd = (value: number, digits = 0) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: digits }).format(value);
 const whole = (value: number) => new Intl.NumberFormat("en-US").format(value);
 
+type Window = { volume?: number; fees?: number; swaps?: number; users?: number; usersWith3Trades?: number };
+type DashboardPayload = AnalyticsPayload & { listedWindows?: Record<"1d" | "7d" | "30d" | "all", Window> };
 type DailyRow = { date: string; volume: number; cumulative: number; wallets: number };
+const RANGES = ["1d", "7d", "30d", "all"] as const;
+const RANGE_LABEL: Record<(typeof RANGES)[number], string> = { "1d": "1D", "7d": "7D", "30d": "30D", all: "All" };
 
 function seriesFor(data: AnalyticsPayload): DailyRow[] {
   const trailingVolume = data.volumeSeries.reduce((sum, point) => sum + point.volume, 0);
@@ -32,13 +36,23 @@ function ChartCard({ title, subtitle, rows, dataKey, color }: { title: string; s
   </section>;
 }
 
+function WindowTable({ title, note, rows, format }: { title: string; note: string; rows: Array<{ range: string; value: number }>; format: (value: number) => string }) {
+  return <article className="rounded-[22px] border border-line bg-surface p-5 sm:p-6">
+    <p className="text-xs font-medium uppercase tracking-[0.14em] text-mute">{title}</p>
+    <p className="mt-1 text-xs text-mute">{note}</p>
+    <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {rows.map((row) => <div key={row.range} className="rounded-2xl border border-line bg-ink px-3 py-3"><dt className="font-mono text-[11px] text-mute">{row.range}</dt><dd className="mt-1 text-xl font-semibold tracking-tight text-ivory">{format(row.value)}</dd></div>)}
+    </dl>
+  </article>;
+}
+
 export function Dashboard() {
-  const [data, setData] = useState<AnalyticsPayload | null>(null);
+  const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let active = true;
-    const load = () => fetch("/api/analytics", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<AnalyticsPayload> : Promise.reject()).then((next) => active && setData(next)).catch(() => active && setError(true));
+    const load = () => fetch("/api/analytics", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<DashboardPayload> : Promise.reject()).then((next) => active && setData(next)).catch(() => active && setError(true));
     load();
     const timer = window.setInterval(load, 30_000);
     return () => { active = false; window.clearInterval(timer); };
@@ -48,17 +62,24 @@ export function Dashboard() {
   if (error) return <main className="mx-auto max-w-6xl px-5 py-20 text-mute">Analytics are temporarily unavailable. Please refresh in a moment.</main>;
   if (!data) return <main className="mx-auto max-w-6xl px-5 py-20 text-mute">Loading Listed analytics…</main>;
 
-  const activity = data.windows.all;
+  const windows = data.listedWindows ?? {
+    "1d": { volume: data.windows["1d"].volume, fees: data.windows["1d"].fees, users: data.windows["1d"].traders, usersWith3Trades: 0 },
+    "7d": { volume: data.windows["1w"].volume, fees: data.windows["1w"].fees, users: data.windows["1w"].traders, usersWith3Trades: 0 },
+    "30d": { volume: data.windows["1m"].volume, fees: data.windows["1m"].fees, users: data.windows["1m"].traders, usersWith3Trades: 0 },
+    all: { volume: data.windows.all.volume, fees: data.windows.all.fees, users: data.traders.total, usersWith3Trades: 0 },
+  };
   const updated = new Date(data.generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
   return <main className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
     <header className="flex items-center justify-between border-b border-line pb-6"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full border border-up/30 bg-up/10 text-lg font-bold text-ivory">L<span className="-ml-0.5 self-end pb-1 text-amber">.</span></span><div><p className="font-semibold tracking-[0.14em] text-ivory">LISTED</p><p className="text-xs text-mute">Exchange analytics</p></div></div><div className="text-right"><p className="inline-flex items-center gap-1.5 text-xs text-up"><span className="h-1.5 w-1.5 rounded-full bg-up" />Live</p><p className="mt-1 text-[11px] text-mute">Updated {updated}</p></div></header>
-    <section className="py-12 sm:py-16"><p className="text-xs font-medium uppercase tracking-[0.18em] text-up">Robinhood Chain</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.055em] text-ivory sm:text-6xl">Trading activity,<br /><span className="font-serif font-normal text-up">made visible.</span></h1><p className="mt-5 max-w-xl text-sm leading-6 text-mute">A live view of confirmed Listed Exchange activity.</p></section>
-    <section className="grid gap-3 sm:grid-cols-3" aria-label="All-time activity"><Metric label="Cumulative volume" value={usd(activity.volume, 2)} note="All confirmed activity" /><Metric label="Wallets traded" value={whole(data.traders.total)} note="Unique wallets" /><Metric label="Trades" value={whole(activity.swaps)} note="Confirmed swaps" /></section>
+    <section className="py-12 sm:py-16"><p className="text-xs font-medium uppercase tracking-[0.18em] text-up">Robinhood Chain</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.055em] text-ivory sm:text-6xl">Trading activity,<br /><span className="font-serif font-normal text-up">made visible.</span></h1><p className="mt-5 max-w-xl text-sm leading-6 text-mute">Confirmed Listed swaps from the product tracker. Volume is quote-time USD. Fees use current protocol bps on single routes and split-route bps when the stored route is a split.</p></section>
+    <div className="grid gap-3">
+      <WindowTable title="Volume" note="Confirmed Listed swap notional" rows={RANGES.map((range) => ({ range: RANGE_LABEL[range], value: Number(windows[range]?.volume ?? 0) }))} format={(value) => usd(value, 2)} />
+      <WindowTable title="Fees" note={`Single-route ${data.protocolFeeBps} bps · split-route fee when route is a split`} rows={RANGES.map((range) => ({ range: RANGE_LABEL[range], value: Number(windows[range]?.fees ?? 0) }))} format={(value) => usd(value, 2)} />
+      <WindowTable title="Users" note="Distinct wallets that completed a Listed swap" rows={RANGES.map((range) => ({ range: RANGE_LABEL[range], value: Number(windows[range]?.users ?? 0) }))} format={whole} />
+      <WindowTable title="Users with 3+ trades" note="Wallets with at least three confirmed swaps in that window" rows={RANGES.map((range) => ({ range: RANGE_LABEL[range], value: Number(windows[range]?.usersWith3Trades ?? 0) }))} format={whole} />
+    </div>
     <section className="mt-3 grid gap-3 lg:grid-cols-2"><ChartCard title="Daily volume" subtitle="Confirmed trading volume" rows={rows} dataKey="volume" color="#37e39a" /><ChartCard title="Cumulative volume" subtitle="All-time growth" rows={rows} dataKey="cumulative" color="#f5a524" /></section>
     <section className="mt-3 rounded-[22px] border border-line bg-surface p-5 sm:p-6"><div className="mb-4"><p className="text-xs font-medium uppercase tracking-[0.16em] text-mute">Daily activity</p><h2 className="mt-1 text-lg font-semibold tracking-tight text-ivory">Volume and participating wallets</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[440px] text-sm"><thead className="border-b border-line text-left text-xs uppercase tracking-[0.12em] text-mute"><tr><th className="pb-3 font-medium">Date</th><th className="pb-3 text-right font-medium">Volume</th><th className="pb-3 text-right font-medium">Wallets</th></tr></thead><tbody>{[...rows].reverse().map((row) => <tr key={row.date} className="border-b border-line/70 last:border-0"><td className="py-3 text-ivory">{row.date}</td><td className="py-3 text-right font-mono text-ivory">{usd(row.volume, 2)}</td><td className="py-3 text-right font-mono text-mute">{whole(row.wallets)}</td></tr>)}</tbody></table></div></section>
   </main>;
-}
-
-function Metric({ label, value, note }: { label: string; value: string; note: string }) {
-  return <article className="rounded-[22px] border border-line bg-surface p-5 sm:p-6"><p className="text-xs font-medium uppercase tracking-[0.14em] text-mute">{label}</p><p className="mt-3 text-3xl font-semibold tracking-[-0.045em] text-ivory">{value}</p><p className="mt-2 text-xs text-mute">{note}</p></article>;
 }
