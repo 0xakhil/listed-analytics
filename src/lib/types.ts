@@ -57,3 +57,28 @@ export type AnalyticsPayload = {
   feeByToken: { name: string; usd: number; share: number }[];
   volumeSeries: { t: string; volume: number; fees: number; wallets?: number }[];
 };
+
+export type DashboardRange = "1d" | "7d" | "30d" | "all";
+
+export type DashboardWindow = {
+  volume: number;
+  fees: number;
+  swaps: number;
+  users: number;
+  repeatUsers: number;
+};
+
+export type ListedDashboardPayload = {
+  generatedAt: string;
+  updatedAt: string | null;
+  windows: Record<DashboardRange, DashboardWindow>;
+  days: Array<{
+    date: string;
+    volume: number;
+    fees: number;
+    swaps: number;
+    users: number;
+    cumulativeVolume: number;
+    cumulativeFees: number;
+  }>;
+};
