@@ -4,7 +4,7 @@ import type { ListedDashboardPayload } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const source = `${(process.env.LISTED_EXCHANGE_URL ?? "https://listed.exchange").replace(/\/$/, "")}/api/analytics/summary`;
+  const source = `${(process.env.LISTED_EXCHANGE_URL ?? "https://www.listed.exchange").replace(/\/$/, "")}/api/analytics/summary`;
   try {
     const response = await fetch(source, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new Error("source unavailable");
