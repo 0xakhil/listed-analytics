@@ -66,6 +66,7 @@ export type DashboardWindow = {
   swaps: number;
   users: number;
   repeatUsers: number;
+  oneTradeUsers: number;
 };
 
 export type ListedDashboardPayload = {
